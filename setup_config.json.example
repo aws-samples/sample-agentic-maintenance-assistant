@@ -1,0 +1,14 @@
+{
+  "AGENTCORE_GATEWAY_NAME": "sample-agentcore-gateway",
+  "AGENTCORE_GATEWAY_TARGET_NAME": "sample-agentcore-gateway-target",
+  "USER_POOL_NAME": "sample-agentcore-gateway-pool",
+  "RESOURCE_SERVER_ID": "sample-agentcore-gateway-id",
+  "RESOURCE_SERVER_NAME": "sample-agentcore-gateway-name",
+  "CLIENT_NAME": "sample-agentcore-gateway-client",
+  "MODEL": "us.amazon.nova-pro-v1:0",
+  "MAINTAINX_API_KEY_PARAMETER_NAME": "MaintainxAPIKey",
+  "MAINTAINX_API_KEY": "your-maintainx-api-key-here",
+  "OPENAPI_FILE_PATH": "openapi.json",
+  "OPENAPI_FILE_NAME": "openapi.json",
+  "S3_BUCKET_NAME": "agentcore-gateway"
+}

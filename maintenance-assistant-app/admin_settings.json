@@ -1,0 +1,19 @@
+{
+  "branding": {
+    "app_subtitle": "Factory Asset Management",
+    "app_title": "Factory AI Predictive Maintenance",
+    "company_name": "Theme Park Operations"
+  },
+  "assets": [
+    {
+      "name": "Test",
+      "asset_type_id": "1",
+      "ml_model_id": null,
+      "map_x": 487.1287128712871,
+      "map_y": 191.43497330236076,
+      "map_width": 50,
+      "map_height": 50,
+      "status": "active"
+    }
+  ]
+}

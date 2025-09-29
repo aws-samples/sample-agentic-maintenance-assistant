@@ -1,0 +1,17 @@
+boto3>=1.34.0
+botocore>=1.34.0
+strands-agents>=0.1.0
+amazon-bedrock-agentcore-sdk>=1.0.0
+opensearch-py>=2.0.0
+retrying>=1.3.4
+requests>=2.31.0
+flask>=2.3.0
+flask-cors
+sqlalchemy
+PyJWT>=2.8.0
+pandas>=2.0.0
+numpy>=1.24.0
+scikit-learn>=1.3.0
+joblib
+tensorflow>=2.13.0
+scipy
