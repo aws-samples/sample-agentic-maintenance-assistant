@@ -121,59 +121,65 @@ if 'KNOWLEDGE_BASE_ID' in config_data:
             knowledgeBaseId=config_data['KNOWLEDGE_BASE_ID']
         )
         
-        # Delete OpenSearch Serverless resources
+        # Delete OpenSearch Serverless resources (enhanced)
         aoss_client = boto3.client('opensearchserverless', region_name=REGION)
         
+        print("Cleaning up OpenSearch Serverless resources...")
+        
+        # Delete collections
         collection_name = f'bedrock-sample-rag-{suffix}'
         try:
             collections = aoss_client.list_collections(collectionFilters={'name': collection_name})
-            if collections['collectionSummaries']:
-                collection_id = collections['collectionSummaries'][0]['id']
+            for collection in collections.get('collectionSummaries', []):
                 safe_delete(
                     aoss_client.delete_collection,
-                    f"OpenSearch Collection: {collection_name}",
-                    id=collection_id
+                    f"OpenSearch Collection: {collection['name']}",
+                    id=collection['id']
                 )
         except Exception as e:
             print(f"Error deleting OpenSearch collection: {e}")
         
-        # Delete OpenSearch policies
-        policy_names = [
-            f'bedrock-sample-rag-ap-{suffix}',
-            f'bedrock-sample-rag-np-{suffix}', 
-            f'bedrock-sample-rag-sp-{suffix}'
-        ]
+        # Delete access policies (comprehensive)
+        try:
+            access_policies = aoss_client.list_access_policies(type='data')
+            for policy in access_policies.get('accessPolicySummaries', []):
+                if f'bedrock-sample-rag' in policy['name'] and suffix in policy['name']:
+                    safe_delete(
+                        aoss_client.delete_access_policy,
+                        f"Access Policy: {policy['name']}",
+                        name=policy['name'],
+                        type='data'
+                    )
+        except Exception as e:
+            print(f"Error deleting access policies: {e}")
         
-        for policy_name in policy_names:
-            try:
-                safe_delete(
-                    aoss_client.delete_access_policy,
-                    f"Access Policy: {policy_name}",
-                    name=policy_name,
-                    type='data'
-                )
-            except:
-                pass
-            
-            try:
-                safe_delete(
-                    aoss_client.delete_security_policy,
-                    f"Network Policy: {policy_name}",
-                    name=policy_name,
-                    type='network'
-                )
-            except:
-                pass
-            
-            try:
-                safe_delete(
-                    aoss_client.delete_security_policy,
-                    f"Encryption Policy: {policy_name}",
-                    name=policy_name,
-                    type='encryption'
-                )
-            except:
-                pass
+        # Delete network policies (comprehensive)
+        try:
+            network_policies = aoss_client.list_security_policies(type='network')
+            for policy in network_policies.get('securityPolicySummaries', []):
+                if f'bedrock-sample-rag' in policy['name'] and suffix in policy['name']:
+                    safe_delete(
+                        aoss_client.delete_security_policy,
+                        f"Network Policy: {policy['name']}",
+                        name=policy['name'],
+                        type='network'
+                    )
+        except Exception as e:
+            print(f"Error deleting network policies: {e}")
+        
+        # Delete encryption policies (comprehensive)
+        try:
+            encryption_policies = aoss_client.list_security_policies(type='encryption')
+            for policy in encryption_policies.get('securityPolicySummaries', []):
+                if f'bedrock-sample-rag' in policy['name'] and suffix in policy['name']:
+                    safe_delete(
+                        aoss_client.delete_security_policy,
+                        f"Encryption Policy: {policy['name']}",
+                        name=policy['name'],
+                        type='encryption'
+                    )
+        except Exception as e:
+            print(f"Error deleting encryption policies: {e}")
         
         # Delete KB-specific IAM roles and policies
         kb_role_names = [f'AmazonBedrockExecutionRoleForKnowledgeBase_{suffix}']
@@ -214,31 +220,40 @@ if 'KNOWLEDGE_BASE_ID' in config_data:
     except Exception as e:
         print(f"Error with KB cleanup: {e}")
 
-# Delete Gateway Targets
+# Delete Gateway and Targets (proper order)
 if 'GATEWAY_URL' in config_data:
     # Extract gateway ID from subdomain (before .gateway.bedrock-agentcore)
     gateway_id = config_data['GATEWAY_URL'].split('//')[1].split('.')[0]
+    print(f"Cleaning up Gateway: {gateway_id}")
+    
+    # First, list and delete all targets
     try:
-        targets = gateway_client.list_gateway_targets(gatewayIdentifier=gateway_id)
-        for target in targets.get('items', []):
+        targets_response = gateway_client.list_gateway_targets(gatewayIdentifier=gateway_id)
+        targets = targets_response.get('items', [])
+        
+        for target in targets:
             safe_delete(
                 gateway_client.delete_gateway_target,
                 f"Gateway Target: {target['name']}",
                 gatewayIdentifier=gateway_id,
                 targetId=target['targetId']
             )
+        
+        # Wait for targets to be fully deleted
+        if targets:
+            print("Waiting for targets to be deleted...")
+            import time
+            time.sleep(10)
+        
+        # Now delete the gateway
+        safe_delete(
+            gateway_client.delete_gateway,
+            f"Gateway: {gateway_id}",
+            gatewayIdentifier=gateway_id
+        )
+        
     except Exception as e:
-        print(f"Error listing gateway targets: {e}")
-
-# Delete Gateway
-if 'GATEWAY_URL' in config_data:
-    # Extract gateway ID from subdomain (before .gateway.bedrock-agentcore)
-    gateway_id = config_data['GATEWAY_URL'].split('//')[1].split('.')[0]
-    safe_delete(
-        gateway_client.delete_gateway,
-        f"Gateway: {gateway_id}",
-        gatewayIdentifier=gateway_id
-    )
+        print(f"Error cleaning up gateway: {e}")
 
 # Delete API Key Credential Provider
 try:
@@ -370,11 +385,34 @@ for role_name in role_names:
         if e.response['Error']['Code'] != 'NoSuchEntity':
             print(f"Error with IAM role {role_name}: {e}")
 
-print("\nCleanup completed!")
+# Clean up CloudWatch Log Groups
+print("Cleaning up CloudWatch Log Groups...")
+logs_client = boto3.client('logs', region_name=REGION)
+
+log_group_prefixes = [
+    '/aws/lambda/knowledge-base-query',
+    '/aws/lambda/CognitoPostConfirmationTrigger',
+    '/aws/bedrock/agentcore',
+    '/aws/opensearch/collections'
+]
+
+for prefix in log_group_prefixes:
+    try:
+        response = logs_client.describe_log_groups(logGroupNamePrefix=prefix)
+        for log_group in response.get('logGroups', []):
+            safe_delete(
+                logs_client.delete_log_group,
+                f"Log Group: {log_group['logGroupName']}",
+                logGroupName=log_group['logGroupName']
+            )
+    except Exception as e:
+        print(f"Error deleting log groups with prefix {prefix}: {e}")
+
+print("\n" + "="*50)
+print("Cleanup completed!")
 print("\nResources that CANNOT be automatically deleted:")
 print("- Config files (setup_config.json, runtime_config.json) - preserved as requested")
-print("- Gateway resources (may require special permissions)")
-print("- Some OpenSearch Serverless policies (may persist)")
-print("- CloudWatch logs generated during operation")
+print("- Some CloudWatch logs may have retention policies")
+print("- IAM roles/policies may have dependencies")
 print("\nNote: Some resources may require elevated permissions to delete.")
-print("If Gateway deletion failed, you may need to delete it manually from the AWS console.")
+print("If any resources remain, they can be safely deleted manually from the AWS console.")
