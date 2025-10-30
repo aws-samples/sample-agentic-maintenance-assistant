@@ -121,65 +121,102 @@ if 'KNOWLEDGE_BASE_ID' in config_data:
             knowledgeBaseId=config_data['KNOWLEDGE_BASE_ID']
         )
         
-        # Delete OpenSearch Serverless resources (enhanced)
+        # Delete OpenSearch Serverless resources (enhanced and comprehensive)
         aoss_client = boto3.client('opensearchserverless', region_name=REGION)
         
         print("Cleaning up OpenSearch Serverless resources...")
+        print(f"Looking for resources with suffix: {suffix}")
         
-        # Delete collections
-        collection_name = f'bedrock-sample-rag-{suffix}'
+        # First, delete collections (this is the main cost driver)
+        print("Step 1: Deleting OpenSearch Collections...")
         try:
-            collections = aoss_client.list_collections(collectionFilters={'name': collection_name})
+            collections = aoss_client.list_collections()
+            found_collections = False
             for collection in collections.get('collectionSummaries', []):
-                safe_delete(
-                    aoss_client.delete_collection,
-                    f"OpenSearch Collection: {collection['name']}",
-                    id=collection['id']
-                )
+                collection_name = collection['name']
+                if 'bedrock-sample-rag' in collection_name and suffix in collection_name:
+                    found_collections = True
+                    print(f"Found collection: {collection_name} (ID: {collection['id']})")
+                    safe_delete(
+                        aoss_client.delete_collection,
+                        f"OpenSearch Collection: {collection_name}",
+                        id=collection['id']
+                    )
+            
+            if found_collections:
+                print("Waiting 30 seconds for collection deletion to propagate...")
+                import time
+                time.sleep(30)
+            else:
+                print("No matching collections found")
+                
         except Exception as e:
-            print(f"Error deleting OpenSearch collection: {e}")
+            print(f"Error deleting OpenSearch collections: {e}")
         
         # Delete access policies (comprehensive)
+        print("Step 2: Deleting Access Policies...")
         try:
             access_policies = aoss_client.list_access_policies(type='data')
+            found_policies = False
             for policy in access_policies.get('accessPolicySummaries', []):
-                if f'bedrock-sample-rag' in policy['name'] and suffix in policy['name']:
+                policy_name = policy['name']
+                if 'bedrock-sample-rag' in policy_name and suffix in policy_name:
+                    found_policies = True
+                    print(f"Found access policy: {policy_name}")
                     safe_delete(
                         aoss_client.delete_access_policy,
-                        f"Access Policy: {policy['name']}",
-                        name=policy['name'],
+                        f"Access Policy: {policy_name}",
+                        name=policy_name,
                         type='data'
                     )
+            if not found_policies:
+                print("No matching access policies found")
         except Exception as e:
             print(f"Error deleting access policies: {e}")
         
         # Delete network policies (comprehensive)
+        print("Step 3: Deleting Network Policies...")
         try:
             network_policies = aoss_client.list_security_policies(type='network')
+            found_policies = False
             for policy in network_policies.get('securityPolicySummaries', []):
-                if f'bedrock-sample-rag' in policy['name'] and suffix in policy['name']:
+                policy_name = policy['name']
+                if 'bedrock-sample-rag' in policy_name and suffix in policy_name:
+                    found_policies = True
+                    print(f"Found network policy: {policy_name}")
                     safe_delete(
                         aoss_client.delete_security_policy,
-                        f"Network Policy: {policy['name']}",
-                        name=policy['name'],
+                        f"Network Policy: {policy_name}",
+                        name=policy_name,
                         type='network'
                     )
+            if not found_policies:
+                print("No matching network policies found")
         except Exception as e:
             print(f"Error deleting network policies: {e}")
         
         # Delete encryption policies (comprehensive)
+        print("Step 4: Deleting Encryption Policies...")
         try:
             encryption_policies = aoss_client.list_security_policies(type='encryption')
+            found_policies = False
             for policy in encryption_policies.get('securityPolicySummaries', []):
-                if f'bedrock-sample-rag' in policy['name'] and suffix in policy['name']:
+                policy_name = policy['name']
+                if 'bedrock-sample-rag' in policy_name and suffix in policy_name:
+                    found_policies = True
+                    print(f"Found encryption policy: {policy_name}")
                     safe_delete(
                         aoss_client.delete_security_policy,
-                        f"Encryption Policy: {policy['name']}",
-                        name=policy['name'],
+                        f"Encryption Policy: {policy_name}",
+                        name=policy_name,
                         type='encryption'
                     )
+            if not found_policies:
+                print("No matching encryption policies found")
         except Exception as e:
             print(f"Error deleting encryption policies: {e}")
+        
+        print("OpenSearch Serverless cleanup completed!")
         
         # Delete KB-specific IAM roles and policies
         kb_role_names = [f'AmazonBedrockExecutionRoleForKnowledgeBase_{suffix}']
@@ -407,6 +444,42 @@ for prefix in log_group_prefixes:
             )
     except Exception as e:
         print(f"Error deleting log groups with prefix {prefix}: {e}")
+
+# Verification step - check for remaining OpenSearch resources
+print("\n" + "="*50)
+print("VERIFICATION: Checking for remaining OpenSearch resources...")
+try:
+    aoss_client = boto3.client('opensearchserverless', region_name=REGION)
+    account_id = sts_client.get_caller_identity()["Account"]
+    suffix = str(account_id)[:4]
+    
+    # Check for remaining collections
+    collections = aoss_client.list_collections()
+    remaining_collections = [c for c in collections.get('collectionSummaries', []) 
+                           if 'bedrock-sample-rag' in c['name'] and suffix in c['name']]
+    
+    # Check for remaining policies
+    access_policies = aoss_client.list_access_policies(type='data')
+    remaining_access = [p for p in access_policies.get('accessPolicySummaries', []) 
+                      if 'bedrock-sample-rag' in p['name'] and suffix in p['name']]
+    
+    if remaining_collections:
+        print("⚠️  WARNING: OpenSearch Collections still exist:")
+        for collection in remaining_collections:
+            print(f"   - {collection['name']} (ID: {collection['id']}) - STATUS: {collection['status']}")
+        print("   These may continue to incur charges!")
+    
+    if remaining_access:
+        print("⚠️  WARNING: Access policies still exist:")
+        for policy in remaining_access:
+            print(f"   - {policy['name']}")
+    
+    if not remaining_collections and not remaining_access:
+        print("✅ SUCCESS: No OpenSearch Serverless resources found!")
+        print("💰 You should no longer be charged for OpenSearch Serverless.")
+    
+except Exception as e:
+    print(f"Could not verify OpenSearch cleanup: {e}")
 
 print("\n" + "="*50)
 print("Cleanup completed!")
