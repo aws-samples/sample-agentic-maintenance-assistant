@@ -168,6 +168,7 @@ except ClientError as e:
         raise e
 
 print(f"Gateway ID: {gatewayID}")
+update_runtime_config("GATEWAY_ID", gatewayID)
 update_runtime_config("GATEWAY_URL", gatewayURL)
 
 acps = boto3.client(service_name="bedrock-agentcore-control")
@@ -180,7 +181,7 @@ try:
     credentialProviderARN = response['credentialProviderArn']
     print(f"Created credential provider: {credentialProviderARN}")
 except ClientError as e:
-    if e.response['Error']['Code'] == 'ConflictException':
+    if e.response['Error']['Code'] in ['ConflictException', 'ValidationException']:
         # Credential provider already exists, list and find it
         try:
             providers = acps.list_api_key_credential_providers()
@@ -199,7 +200,12 @@ except ClientError as e:
             exit(1)
     else:
         print(f"Error creating credential provider: {e}")
+        print(f"Error code: {e.response['Error']['Code']}")
+        print(f"Error message: {e.response['Error']['Message']}")
         exit(1)
+
+# Store credential provider ARN in runtime config
+update_runtime_config("CREDENTIAL_PROVIDER_ARN", credentialProviderARN)
 
 # Upload OpenAPI specifications to S3
 # Create an S3 client
@@ -386,11 +392,6 @@ try:
         RoleName=lambda_role_name,
         AssumeRolePolicyDocument=json.dumps(lambda_trust_policy)
     )
-    iam_client.put_role_policy(
-        RoleName=lambda_role_name,
-        PolicyName='KnowledgeBaseLambdaPolicy',
-        PolicyDocument=json.dumps(lambda_policy)
-    )
     print(f"Created Lambda IAM role: {lambda_role_name}")
 except ClientError as e:
     if e.response['Error']['Code'] == 'EntityAlreadyExists':
@@ -398,6 +399,14 @@ except ClientError as e:
         print(f"Using existing Lambda IAM role: {lambda_role_name}")
     else:
         raise e
+
+# Always update the policy to ensure it has the correct Knowledge Base ID
+iam_client.put_role_policy(
+    RoleName=lambda_role_name,
+    PolicyName='KnowledgeBaseLambdaPolicy',
+    PolicyDocument=json.dumps(lambda_policy)
+)
+print(f"Updated Lambda role policy with Knowledge Base ID: {kb_id}")
 
 time.sleep(10)  # Wait for role propagation
 
@@ -430,6 +439,17 @@ except ClientError as e:
         lambda_response = lambda_client.get_function(FunctionName=function_name)
         lambda_arn = lambda_response['Configuration']['FunctionArn']
         print(f"Using existing Lambda function: {function_name}")
+        
+        # Update the function's environment variables with the new Knowledge Base ID
+        lambda_client.update_function_configuration(
+            FunctionName=function_name,
+            Environment={
+                'Variables': {
+                    'KNOWLEDGE_BASE_ID': kb_id
+                }
+            }
+        )
+        print(f"Updated Lambda function environment with Knowledge Base ID: {kb_id}")
     else:
         raise e
 
@@ -553,6 +573,9 @@ os.remove('lambda_function.zip')
 
 update_runtime_config("LAMBDA_FUNCTION_ARN", lambda_arn)
 update_runtime_config("LAMBDA_TARGET_NAME", 'knowledge-base-lambda-target')
+update_runtime_config("KNOWLEDGE_BASE_ID", kb_id)
+update_runtime_config("RAG_BUCKET_NAME", rag_bucket_name)
+
 
 print("\n" + "="*80)
 print("SETUP COMPLETE!")

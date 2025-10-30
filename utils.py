@@ -493,10 +493,28 @@ def create_identity_pool_roles(identity_pool_id, region):
                         {
                             "Effect": "Allow",
                             "Action": [
-                                "bedrock:InvokeModel",
-                                "bedrock:InvokeModelWithResponseStream",
-                                "bedrock-runtime:InvokeModel",
-                                "bedrock-runtime:InvokeModelWithResponseStream"
+                                "bedrock:*"
+                            ],
+                            "Resource": "*"
+                        },
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "bedrock-runtime:*"
+                            ],
+                            "Resource": "*"
+                        },
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "bedrock-agent:*"
+                            ],
+                            "Resource": "*"
+                        },
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "bedrock-agentcore:*"
                             ],
                             "Resource": "*"
                         },
@@ -513,8 +531,24 @@ def create_identity_pool_roles(identity_pool_id, region):
                         {
                             "Effect": "Allow",
                             "Action": [
-                                "bedrock-agent:*",
-                                "bedrock-agentcore:*"
+                                "lambda:InvokeFunction"
+                            ],
+                            "Resource": "*"
+                        },
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "logs:CreateLogGroup",
+                                "logs:CreateLogStream",
+                                "logs:PutLogEvents"
+                            ],
+                            "Resource": "*"
+                        },
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "opensearch:*",
+                                "aoss:*"
                             ],
                             "Resource": "*"
                         }
@@ -532,7 +566,18 @@ def create_identity_pool_roles(identity_pool_id, region):
                             "Effect": "Allow",
                             "Action": [
                                 "bedrock:InvokeModel",
-                                "bedrock-runtime:InvokeModel"
+                                "bedrock:InvokeModelWithResponseStream",
+                                "bedrock:Retrieve",
+                                "bedrock-runtime:InvokeModel",
+                                "bedrock-runtime:InvokeModelWithResponseStream"
+                            ],
+                            "Resource": "*"
+                        },
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "bedrock-agent:InvokeAgent",
+                                "bedrock-agentcore:InvokeGateway"
                             ],
                             "Resource": "*"
                         },
@@ -541,6 +586,13 @@ def create_identity_pool_roles(identity_pool_id, region):
                             "Action": [
                                 "s3:GetObject",
                                 "s3:ListBucket"
+                            ],
+                            "Resource": "*"
+                        },
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "lambda:InvokeFunction"
                             ],
                             "Resource": "*"
                         }
