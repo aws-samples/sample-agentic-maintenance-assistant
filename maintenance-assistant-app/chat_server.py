@@ -334,8 +334,8 @@ def chat():
             try:
                 # Create BedrockModel - it will use the environment credentials
                 model = BedrockModel(
-                    model_id='anthropic.claude-3-haiku-20240307-v1:0', 
-                    temperature=0.7, 
+                    model_id=config['MODEL'],  # Use model from runtime config
+                    temperature=0,  # Use greedy decoding for better tool use
                     streaming=False
                 )
             finally:
@@ -370,8 +370,8 @@ def chat():
             # For other errors, try fallback to environment credentials
             try:
                 model = BedrockModel(
-                    model_id='anthropic.claude-3-haiku-20240307-v1:0', 
-                    temperature=0.7, 
+                    model_id=config['MODEL'],  # Use model from runtime config
+                    temperature=0,  # Use greedy decoding for better tool use
                     streaming=False
                 )
                 print("Warning: Falling back to environment AWS credentials")

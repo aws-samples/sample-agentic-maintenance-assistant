@@ -5,7 +5,7 @@
   "RESOURCE_SERVER_ID": "sample-agentcore-gateway-id",
   "RESOURCE_SERVER_NAME": "sample-agentcore-gateway-name",
   "CLIENT_NAME": "sample-agentcore-gateway-client",
-  "MODEL": "us.amazon.nova-pro-v1:0",
+  "MODEL": "anthropic.claude-3-haiku-20240307-v1:0",
   "MAINTAINX_API_KEY_PARAMETER_NAME": "MaintainxAPIKey",
   "MAINTAINX_API_KEY": "your-maintainx-api-key-here",
   "OPENAPI_FILE_PATH": "openapi.json",
