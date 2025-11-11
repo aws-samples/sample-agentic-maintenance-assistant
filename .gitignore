@@ -13,9 +13,12 @@ ENV/
 # Log files
 *.log
 maintenance-assistant-app/chat_server.log
+maintenance-assistant-app/nova_sonic_chat.log
 
 # Node modules
 maintenance-assistant-app/node_modules/
+maintenance-assistant-app/nova-sonic-chat/node_modules/
+maintenance-assistant-app/nova-sonic-chat/dist/
 
 # Database files
 *.db

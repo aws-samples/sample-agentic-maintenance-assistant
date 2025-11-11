@@ -105,12 +105,12 @@ const InteractiveMap = ({ onAssetClick, branding, getAuthHeaders }) => {
         return;
       }
       
-      // Open chat interface in new window with alert context and user token
-      const chatUrl = `http://localhost:5002/?asset=${encodeURIComponent(asset.name)}&fault=${encodeURIComponent(alert.fault_type)}&severity=${encodeURIComponent(alert.severity)}&alert=${alert.id}&token=${encodeURIComponent(userToken)}`;
+      // Open Nova Sonic chat interface in new window with alert context and user token
+      const chatUrl = `http://localhost:5003/?asset=${encodeURIComponent(asset.name)}&fault=${encodeURIComponent(alert.fault_type)}&severity=${encodeURIComponent(alert.severity)}&alert=${alert.id}&token=${encodeURIComponent(userToken)}`;
       
       const chatWindow = window.open(
         chatUrl,
-        'maintainx-chat',
+        'nova-sonic-chat',
         'width=900,height=700,scrollbars=yes,resizable=yes,status=yes,location=yes,toolbar=no,menubar=no'
       );
       

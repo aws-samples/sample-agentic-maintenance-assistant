@@ -14,7 +14,7 @@ fi
 cleanup() {
     echo ""
     echo "Shutting down all servers..."
-    kill $ADMIN_PID $API_PID $CHAT_PID 2>/dev/null || true
+    kill $ADMIN_PID $API_PID $CHAT_PID $NOVA_SONIC_PID 2>/dev/null || true
     exit 0
 }
 
@@ -28,12 +28,14 @@ pkill -f "python3.*api_server" 2>/dev/null || true
 pkill -f "python3.*chat_server" 2>/dev/null || true
 pkill -f "npm start" 2>/dev/null || true
 pkill -f "react-scripts" 2>/dev/null || true
+pkill -f "node.*server.js" 2>/dev/null || true
 
 # Kill processes on specific ports
 lsof -ti:3000 | xargs kill -9 2>/dev/null || true
 lsof -ti:5000 | xargs kill -9 2>/dev/null || true
 lsof -ti:5001 | xargs kill -9 2>/dev/null || true
 lsof -ti:5002 | xargs kill -9 2>/dev/null || true
+lsof -ti:5003 | xargs kill -9 2>/dev/null || true
 
 echo "Waiting for processes to terminate..."
 sleep 3
@@ -47,14 +49,27 @@ else
     echo "Python dependencies already installed"
 fi
 
-# Check and install Node dependencies
-echo "Checking Node.js dependencies..."
+# Check and install Node dependencies for main app
+echo "Checking Node.js dependencies for main app..."
 if [ ! -d "node_modules" ]; then
     echo "Installing Node.js dependencies..."
     npm install
 else
     echo "Node.js dependencies already installed"
 fi
+
+# Check and install Node dependencies for Nova Sonic chat
+echo "Checking Node.js dependencies for Nova Sonic chat..."
+if [ ! -d "nova-sonic-chat/node_modules" ]; then
+    echo "Installing Nova Sonic chat dependencies..."
+    (cd nova-sonic-chat && npm install)
+else
+    echo "Nova Sonic chat dependencies already installed"
+fi
+
+# Build Nova Sonic TypeScript files
+echo "Building Nova Sonic chat server..."
+(cd nova-sonic-chat && npm run build)
 
 # Start backend servers in background
 echo "Starting Asset API server (port 5001)..."
@@ -65,9 +80,13 @@ echo "Starting API server (port 5000)..."
 python3 api_server.py &
 API_PID=$!
 
-echo "Starting Chat server (port 5002)..."
+echo "Starting Chat server (port 5002) - Python backup..."
 python3 chat_server.py > chat_server.log 2>&1 &
 CHAT_PID=$!
+
+echo "Starting Nova Sonic Chat server (port 5003)..."
+(cd nova-sonic-chat && npm start > ../nova_sonic_chat.log 2>&1) &
+NOVA_SONIC_PID=$!
 
 # Wait for servers to start
 echo "Waiting for servers to initialize..."
@@ -98,6 +117,13 @@ else
     servers_ok=false
 fi
 
+if ps -p $NOVA_SONIC_PID > /dev/null; then
+    echo "Nova Sonic Chat server running (PID: $NOVA_SONIC_PID)"
+else
+    echo "Nova Sonic Chat server failed to start (check nova_sonic_chat.log)"
+    servers_ok=false
+fi
+
 if [ "$servers_ok" = false ]; then
     echo ""
     echo "WARNING: Some servers failed to start. Check the logs above."
@@ -108,16 +134,19 @@ fi
 # Display access URLs
 echo ""
 echo "Access URLs:"
-echo "   Main App:     http://localhost:3000"
-echo "   Admin Panel:  http://localhost:3000/admin"
-echo "   API Server:   http://localhost:5000"
-echo "   Asset API:    http://localhost:5001"
-echo "   Chat Server:  http://localhost:5002"
+echo "   Main App:          http://localhost:3000"
+echo "   Admin Panel:       http://localhost:3000/admin"
+echo "   API Server:        http://localhost:5000"
+echo "   Asset API:         http://localhost:5001"
+echo "   Chat Server (old): http://localhost:5002"
+echo "   Nova Sonic Chat:   http://localhost:5003"
 echo ""
 echo "Tips:"
-echo "   • Click on alerts in the main app to open AI chat"
+echo "   • Click on alerts in the main app to open Nova Sonic AI chat"
+echo "   • Nova Sonic provides speech-to-speech interaction"
+echo "   • Python chat server (5002) is kept as backup"
 echo "   • Use the admin panel to configure assets and maps"
-echo "   • Check chat_server.log if chat features aren't working"
+echo "   • Check nova_sonic_chat.log if chat features aren't working"
 echo ""
 echo "Press Ctrl+C to stop all servers"
 echo ""
