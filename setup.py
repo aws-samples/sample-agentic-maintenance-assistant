@@ -117,6 +117,7 @@ lambda_function_arn = utils.create_post_confirmation_lambda(user_pool_id)
 if lambda_function_arn:
     utils.configure_cognito_trigger(cognito, user_pool_id, lambda_function_arn)
     update_runtime_config("POST_CONFIRMATION_LAMBDA_ARN", lambda_function_arn)
+    update_runtime_config("POST_CONFIRMATION_LAMBDA_NAME", "CognitoPostConfirmationTrigger")
 
 # Create Cognito Identity Pool for AWS credential federation
 print("Creating Cognito Identity Pool for AWS credential federation...")

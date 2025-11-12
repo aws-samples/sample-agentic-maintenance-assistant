@@ -34,10 +34,12 @@ iam_client = boto3.client('iam', region_name=REGION)
 
 print("Starting cleanup...")
 
-# Delete Lambda function and role first
+# Delete Lambda functions and roles
+lambda_client = boto3.client('lambda', region_name=REGION)
+
+# Delete Knowledge Base Lambda
 if 'LAMBDA_FUNCTION_ARN' in config_data:
-    print("Deleting Lambda function and role...")
-    lambda_client = boto3.client('lambda', region_name=REGION)
+    print("Deleting Knowledge Base Lambda function and role...")
     
     try:
         safe_delete(
@@ -66,6 +68,51 @@ if 'LAMBDA_FUNCTION_ARN' in config_data:
         )
     except Exception as e:
         print(f"Lambda role not found: {e}")
+
+# Delete Post-Confirmation Lambda
+if 'POST_CONFIRMATION_LAMBDA_NAME' in config_data:
+    print("Deleting Post-Confirmation Lambda function and role...")
+    function_name = config_data['POST_CONFIRMATION_LAMBDA_NAME']
+    
+    try:
+        safe_delete(
+            lambda_client.delete_function,
+            f"Lambda function: {function_name}",
+            FunctionName=function_name
+        )
+    except Exception as e:
+        print(f"Lambda function {function_name} not found: {e}")
+    
+    # Delete the Lambda role
+    role_name = "CognitoPostConfirmationRole"
+    try:
+        # Detach managed policies
+        try:
+            iam_client.detach_role_policy(
+                RoleName=role_name,
+                PolicyArn='arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+            )
+        except:
+            pass
+        
+        # Delete inline policies
+        try:
+            safe_delete(
+                iam_client.delete_role_policy,
+                f"Lambda role policy: CognitoGroupManagement",
+                RoleName=role_name,
+                PolicyName='CognitoGroupManagement'
+            )
+        except:
+            pass
+        
+        safe_delete(
+            iam_client.delete_role,
+            f"Lambda IAM role: {role_name}",
+            RoleName=role_name
+        )
+    except Exception as e:
+        print(f"Lambda role {role_name} not found: {e}")
 
 # Delete Knowledge Base resources
 if 'KNOWLEDGE_BASE_ID' in config_data:
@@ -332,21 +379,39 @@ try:
 except Exception as e:
     print(f"Error deleting S3 resources: {e}")
 
-# Delete Cognito Client
-if 'USER_POOL_ID' in config_data and 'CLIENT_ID' in config_data:
-    try:
-        cognito.describe_user_pool_client(
-            UserPoolId=config_data['USER_POOL_ID'],
-            ClientId=config_data['CLIENT_ID']
-        )
-        safe_delete(
-            cognito.delete_user_pool_client,
-            f"Cognito Client: {config_data['CLIENT_ID']}",
-            UserPoolId=config_data['USER_POOL_ID'],
-            ClientId=config_data['CLIENT_ID']
-        )
-    except ClientError:
-        print(f"Cognito Client {config_data['CLIENT_ID']} already deleted")
+# Delete Cognito Clients (M2M and User App)
+if 'USER_POOL_ID' in config_data:
+    # Delete M2M Client
+    if 'CLIENT_ID' in config_data:
+        try:
+            cognito.describe_user_pool_client(
+                UserPoolId=config_data['USER_POOL_ID'],
+                ClientId=config_data['CLIENT_ID']
+            )
+            safe_delete(
+                cognito.delete_user_pool_client,
+                f"Cognito M2M Client: {config_data['CLIENT_ID']}",
+                UserPoolId=config_data['USER_POOL_ID'],
+                ClientId=config_data['CLIENT_ID']
+            )
+        except ClientError:
+            print(f"Cognito M2M Client {config_data['CLIENT_ID']} already deleted")
+    
+    # Delete User App Client
+    if 'USER_APP_CLIENT_ID' in config_data:
+        try:
+            cognito.describe_user_pool_client(
+                UserPoolId=config_data['USER_POOL_ID'],
+                ClientId=config_data['USER_APP_CLIENT_ID']
+            )
+            safe_delete(
+                cognito.delete_user_pool_client,
+                f"Cognito User App Client: {config_data['USER_APP_CLIENT_ID']}",
+                UserPoolId=config_data['USER_POOL_ID'],
+                ClientId=config_data['USER_APP_CLIENT_ID']
+            )
+        except ClientError:
+            print(f"Cognito User App Client {config_data['USER_APP_CLIENT_ID']} already deleted")
 
 # Delete Cognito Resource Server
 if 'USER_POOL_ID' in config_data and 'RESOURCE_SERVER_ID' in config_data:
@@ -363,6 +428,81 @@ if 'USER_POOL_ID' in config_data and 'RESOURCE_SERVER_ID' in config_data:
         )
     except ClientError:
         print(f"Resource Server {config_data['RESOURCE_SERVER_ID']} already deleted")
+
+# Delete Cognito Identity Pool and associated roles
+if 'IDENTITY_POOL_ID' in config_data:
+    print("Deleting Cognito Identity Pool and associated roles...")
+    cognito_identity = boto3.client('cognito-identity', region_name=REGION)
+    
+    try:
+        # Get identity pool details to find associated roles
+        identity_pool = cognito_identity.describe_identity_pool(
+            IdentityPoolId=config_data['IDENTITY_POOL_ID']
+        )
+        
+        # Delete the identity pool
+        safe_delete(
+            cognito_identity.delete_identity_pool,
+            f"Identity Pool: {config_data['IDENTITY_POOL_ID']}",
+            IdentityPoolId=config_data['IDENTITY_POOL_ID']
+        )
+        
+        # Delete associated IAM roles
+        identity_pool_name = identity_pool.get('IdentityPoolName', 'maintenance-assistant')
+        role_names = [
+            f'Cognito_{identity_pool_name}_Auth_Role',
+            f'Cognito_{identity_pool_name}_Unauth_Role',
+            f'Cognito_{identity_pool_name}_Administrators_Role',
+            f'Cognito_{identity_pool_name}_Technicians_Role',
+            f'Cognito_{identity_pool_name}_Viewers_Role'
+        ]
+        
+        for role_name in role_names:
+            try:
+                # Detach all policies
+                try:
+                    attached_policies = iam_client.list_attached_role_policies(RoleName=role_name)
+                    for policy in attached_policies['AttachedPolicies']:
+                        iam_client.detach_role_policy(RoleName=role_name, PolicyArn=policy['PolicyArn'])
+                except:
+                    pass
+                
+                # Delete inline policies
+                try:
+                    inline_policies = iam_client.list_role_policies(RoleName=role_name)
+                    for policy_name in inline_policies['PolicyNames']:
+                        iam_client.delete_role_policy(RoleName=role_name, PolicyName=policy_name)
+                except:
+                    pass
+                
+                safe_delete(
+                    iam_client.delete_role,
+                    f"Identity Pool IAM Role: {role_name}",
+                    RoleName=role_name
+                )
+            except ClientError as e:
+                if e.response['Error']['Code'] != 'NoSuchEntity':
+                    print(f"Error deleting role {role_name}: {e}")
+                    
+    except Exception as e:
+        print(f"Error deleting Identity Pool: {e}")
+
+# Delete Cognito User Groups
+if 'USER_POOL_ID' in config_data:
+    print("Deleting Cognito User Groups...")
+    group_names = ['Administrators', 'Technicians', 'Viewers']
+    
+    for group_name in group_names:
+        try:
+            safe_delete(
+                cognito.delete_group,
+                f"Cognito Group: {group_name}",
+                GroupName=group_name,
+                UserPoolId=config_data['USER_POOL_ID']
+            )
+        except ClientError as e:
+            if e.response['Error']['Code'] != 'ResourceNotFoundException':
+                print(f"Error deleting group {group_name}: {e}")
 
 # Delete Cognito User Pool Domain first, then User Pool
 if 'USER_POOL_ID' in config_data:
@@ -386,7 +526,7 @@ if 'USER_POOL_ID' in config_data:
         UserPoolId=config_data['USER_POOL_ID']
     )
 
-# Delete IAM Roles
+# Delete Gateway IAM Role (with all inline policies including Lambda invoke)
 role_names = [
     "sample-lambdagateway-agentcore-gateway-role"
 ]
@@ -396,19 +536,25 @@ for role_name in role_names:
         # Check if role exists
         iam_client.get_role(RoleName=role_name)
         
-        # Detach policies
+        # Detach managed policies
         try:
             attached_policies = iam_client.list_attached_role_policies(RoleName=role_name)
             for policy in attached_policies['AttachedPolicies']:
                 iam_client.detach_role_policy(RoleName=role_name, PolicyArn=policy['PolicyArn'])
+                print(f"✓ Detached policy {policy['PolicyName']} from {role_name}")
         except:
             pass
         
-        # Delete inline policies
+        # Delete ALL inline policies (including LambdaInvokePolicy)
         try:
             inline_policies = iam_client.list_role_policies(RoleName=role_name)
             for policy_name in inline_policies['PolicyNames']:
-                iam_client.delete_role_policy(RoleName=role_name, PolicyName=policy_name)
+                safe_delete(
+                    iam_client.delete_role_policy,
+                    f"Inline policy: {policy_name} from {role_name}",
+                    RoleName=role_name,
+                    PolicyName=policy_name
+                )
         except:
             pass
         
