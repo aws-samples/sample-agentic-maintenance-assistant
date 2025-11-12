@@ -20,8 +20,7 @@ console.log('Fault context from URL:', faultContext);
 const socket = io();
 
 // DOM elements
-const startButton = document.getElementById('start');
-const stopButton = document.getElementById('stop');
+const voiceToggleButton = document.getElementById('voice-toggle');
 const statusElement = document.getElementById('status');
 const chatContainer = document.getElementById('chat-container');
 
@@ -69,14 +68,14 @@ function displayFaultContext() {
     const contextDiv = document.createElement('div');
     contextDiv.className = 'fault-context';
     contextDiv.innerHTML = `
-        <h3>Alert Context</h3>
-        <p><strong>Asset:</strong> ${faultContext.asset}</p>
-        <p><strong>Fault Type:</strong> ${faultContext.fault}</p>
-        <p><strong>Severity:</strong> <span class="severity-${faultContext.severity}">${faultContext.severity.toUpperCase()}</span></p>
+        <span><strong>Asset:</strong> ${faultContext.asset}</span>
+        <span class="separator">•</span>
+        <span><strong>Fault:</strong> ${faultContext.fault}</span>
+        <span class="separator">•</span>
+        <span><strong>Severity:</strong> <span class="severity-${faultContext.severity}">${faultContext.severity.toUpperCase()}</span></span>
     `;
     const appDiv = document.getElementById('app');
-    const statusDiv = document.getElementById('status');
-    appDiv.insertBefore(contextDiv, statusDiv);
+    appDiv.appendChild(contextDiv);
 }
     "dialog exchanging the transcripts of a natural real-time conversation. Keep your responses short, " +
     "generally two or three sentences for chatty scenarios.";
@@ -112,9 +111,9 @@ async function initAudio() {
 
         await audioPlayer.start();
 
-        statusElement.textContent = "Microphone ready. Click Start to begin.";
+        statusElement.textContent = "Microphone ready. Enable voice mode to begin.";
         statusElement.className = "ready";
-        startButton.disabled = false;
+        voiceToggleButton.disabled = false;
     } catch (error) {
         console.error("Error accessing microphone:", error);
         statusElement.textContent = "Error: " + error.message;
@@ -226,9 +225,9 @@ async function startStreaming() {
         }
 
         isStreaming = true;
-        startButton.disabled = true;
-        stopButton.disabled = false;
-        statusElement.textContent = "Streaming... Speak now";
+        voiceToggleButton.textContent = "Disable Voice Mode";
+        voiceToggleButton.className = "button active";
+        statusElement.textContent = "Voice mode active - Speak now";
         statusElement.className = "recording";
 
         // Show user thinking indicator when starting to record
@@ -263,8 +262,8 @@ function stopStreaming() {
         sourceNode.disconnect();
     }
 
-    startButton.disabled = false;
-    stopButton.disabled = true;
+    voiceToggleButton.textContent = "Enable Voice Mode";
+    voiceToggleButton.className = "button";
     statusElement.textContent = "Processing...";
     statusElement.className = "processing";
 
@@ -347,13 +346,15 @@ function updateChatUI() {
             const roleLowerCase = item.role.toLowerCase();
             messageDiv.className = `message ${roleLowerCase}`;
 
-            const roleLabel = document.createElement('div');
-            roleLabel.className = 'role-label';
-            roleLabel.textContent = item.role;
-            messageDiv.appendChild(roleLabel);
+            // Add source badge
+            const sourceBadge = document.createElement('span');
+            sourceBadge.className = 'source-badge';
+            sourceBadge.textContent = item.source || (item.role === 'user' ? 'You' : item.role === 'assistant' ? 'Nova Sonic' : item.role);
+            messageDiv.appendChild(sourceBadge);
 
             const content = document.createElement('div');
-            content.textContent = item.message || "No content";
+            content.className = 'message-content';
+            content.textContent = item.message || item.content || "No content";
             messageDiv.appendChild(content);
 
             chatContainer.appendChild(messageDiv);
@@ -590,16 +591,16 @@ socket.on('disconnect', () => {
     if (manualDisconnect) {
         // Manual disconnect - keep buttons enabled for restart
         manualDisconnect = false;
-        statusElement.textContent = "Stopped. Click Start to begin new session.";
+        statusElement.textContent = "Voice mode disabled. Enable to start new session.";
         statusElement.className = "ready";
-        startButton.disabled = false;
-        stopButton.disabled = true;
+        voiceToggleButton.textContent = "Enable Voice Mode";
+        voiceToggleButton.className = "button";
+        voiceToggleButton.disabled = false;
     } else {
         // Unexpected disconnect - disable buttons
         statusElement.textContent = "Disconnected from server";
         statusElement.className = "disconnected";
-        startButton.disabled = true;
-        stopButton.disabled = true;
+        voiceToggleButton.disabled = true;
     }
     sessionInitialized = false;
     hideUserThinkingIndicator();
@@ -615,13 +616,115 @@ socket.on('error', (error) => {
     hideAssistantThinkingIndicator();
 });
 
-// Button event listeners
-startButton.addEventListener('click', startStreaming);
-stopButton.addEventListener('click', stopStreaming);
+// Voice toggle button event listener
+voiceToggleButton.addEventListener('click', () => {
+    if (isStreaming) {
+        stopStreaming();
+    } else {
+        startStreaming();
+    }
+});
 
 // Initialize the app when the page loads
 document.addEventListener('DOMContentLoaded', initAudio);
 // Display fault context when page loads
 document.addEventListener('DOMContentLoaded', () => {
     displayFaultContext();
+});
+
+// ============================================
+// TEXT CHAT FUNCTIONALITY
+// ============================================
+
+const textInput = document.getElementById('text-input');
+const sendTextButton = document.getElementById('send-text');
+
+// Send text message to Claude
+async function sendTextMessage() {
+    const message = textInput.value.trim();
+    if (!message) return;
+    
+    // Clear input
+    textInput.value = '';
+    
+    // Add user message to chat
+    addMessageToChat('user', message, 'text', 'You');
+    
+    // Show loading indicator
+    const loadingId = addMessageToChat('assistant', 'Thinking...', 'text', 'Claude');
+    
+    try {
+        const response = await fetch('http://localhost:5002/api/text-chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${faultContext.token}`
+            },
+            body: JSON.stringify({
+                message: message,
+                alert_context: {
+                    asset_name: faultContext.asset,
+                    fault_type: faultContext.fault,
+                    severity: faultContext.severity,
+                    alert_id: faultContext.alert
+                }
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        // Remove loading indicator
+        removeMessageFromChat(loadingId);
+        
+        // Add Claude's response
+        addMessageToChat('assistant', data.response || 'No response', 'text', 'Claude');
+        
+    } catch (error) {
+        console.error('Text chat error:', error);
+        // Remove loading indicator
+        removeMessageFromChat(loadingId);
+        // Show error message
+        addMessageToChat('assistant', `Error: ${error.message}`, 'text', 'Claude');
+    }
+}
+
+// Helper function to add message to chat
+function addMessageToChat(role, content, type, source) {
+    const messageId = Date.now() + Math.random();
+    const message = {
+        id: messageId,
+        role: role,
+        message: content,  // Use 'message' to match existing structure
+        content: content,   // Also keep 'content' for compatibility
+        type: type,
+        source: source,
+        timestamp: new Date().toISOString()
+    };
+    
+    chat.history.push(message);
+    chatRef.current = chat;
+    updateChatUI();
+    
+    return messageId;
+}
+
+// Helper function to remove message from chat
+function removeMessageFromChat(messageId) {
+    chat.history = chat.history.filter(msg => msg.id !== messageId);
+    chatRef.current = chat;
+    updateChatUI();
+}
+
+
+
+// Event listeners for text chat
+sendTextButton.addEventListener('click', sendTextMessage);
+textInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        sendTextMessage();
+    }
 });

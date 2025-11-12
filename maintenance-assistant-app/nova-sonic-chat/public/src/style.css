@@ -441,60 +441,202 @@ button:disabled,
 }
 /* Fault Context Styling */
 .fault-context {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 12px;
-  padding: 20px;
-  margin-bottom: 20px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(102, 126, 234, 0.15);
+  border-top: 1px solid rgba(102, 126, 234, 0.3);
+  padding: 8px 15px;
+  font-size: 0.85em;
+  color: rgba(255, 255, 255, 0.9);
+  margin-top: 10px;
 }
 
-.fault-context h3 {
-  margin-top: 0;
-  color: #ffffff;
-  font-size: 1.4em;
-  margin-bottom: 15px;
+.fault-context span {
+  white-space: nowrap;
 }
 
-.fault-context p {
-  margin: 8px 0;
-  color: #ffffff;
-  font-size: 1em;
+.fault-context .separator {
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: bold;
 }
 
 .fault-context strong {
-  color: #f0f0f0;
+  color: rgba(255, 255, 255, 0.7);
   font-weight: 600;
+  margin-right: 4px;
 }
 
 .severity-high {
-  color: #ff4444;
+  color: #ff6b6b;
   font-weight: bold;
-  background: rgba(255, 68, 68, 0.2);
-  padding: 2px 8px;
-  border-radius: 4px;
+  background: rgba(255, 68, 68, 0.25);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 0.9em;
 }
 
 .severity-medium {
-  color: #ffaa00;
+  color: #ffd93d;
   font-weight: bold;
-  background: rgba(255, 170, 0, 0.2);
-  padding: 2px 8px;
-  border-radius: 4px;
+  background: rgba(255, 170, 0, 0.25);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 0.9em;
 }
 
 .severity-low {
-  color: #44ff44;
+  color: #6bcf7f;
   font-weight: bold;
-  background: rgba(68, 255, 68, 0.2);
-  padding: 2px 8px;
-  border-radius: 4px;
+  background: rgba(68, 255, 68, 0.25);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 0.9em;
 }
 
 .severity-unknown {
   color: #aaaaaa;
   font-weight: bold;
-  background: rgba(170, 170, 170, 0.2);
+  background: rgba(170, 170, 170, 0.25);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 0.9em;
+}
+
+/* Input Controls Container */
+#input-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 15px;
+  padding: 15px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+}
+
+/* Text Input Container */
+#text-input-container {
+  display: flex;
+  gap: 10px;
+}
+
+/* Voice Controls Container */
+#voice-controls {
+  display: flex;
+  justify-content: center;
+}
+
+#text-input {
+  flex: 1;
+  padding: 12px 15px;
+  font-size: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  outline: none;
+  transition: border-color 0.3s;
+}
+
+#text-input:focus {
+  border-color: #646cff;
+}
+
+#text-input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+#send-text {
+  padding: 12px 24px;
+  font-size: 16px;
+  background: #646cff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+
+#send-text:hover {
+  background: #535bf2;
+}
+
+#send-text:active {
+  background: #4248d4;
+}
+
+/* Voice Toggle Button */
+#voice-toggle {
+  padding: 12px 24px;
+  font-size: 16px;
+  background: #10b981;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.3s;
+  min-width: 200px;
+}
+
+#voice-toggle:hover {
+  background: #059669;
+}
+
+#voice-toggle.active {
+  background: #ef4444;
+}
+
+#voice-toggle.active:hover {
+  background: #dc2626;
+}
+
+/* Source Badge */
+.source-badge {
+  display: inline-block;
   padding: 2px 8px;
-  border-radius: 4px;
+  margin-bottom: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.message.user .source-badge {
+  background: rgba(100, 108, 255, 0.2);
+  color: #646cff;
+}
+
+.message.assistant .source-badge {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Message styling improvements */
+.message {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin: 10px 0;
+  padding: 12px 15px;
+  border-radius: 8px;
+  max-width: 80%;
+}
+
+.message.user {
+  align-self: flex-end;
+  align-items: flex-end;
+  background: rgba(100, 108, 255, 0.15);
+}
+
+.message.assistant {
+  align-self: flex-start;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.message-content {
+  margin-top: 5px;
+  text-align: left;
+  word-wrap: break-word;
 }

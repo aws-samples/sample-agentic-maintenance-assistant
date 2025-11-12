@@ -244,8 +244,8 @@ def get_user_aws_session(user_jwt_token):
             del user_sessions_cache[user_id]
         return None
 
-@app.route('/api/chat', methods=['POST'])
-def chat():
+@app.route('/api/text-chat', methods=['POST'])
+def text_chat():
     try:
         print("Received chat request")
         
