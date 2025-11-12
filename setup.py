@@ -182,22 +182,43 @@ try:
     print(f"Created credential provider: {credentialProviderARN}")
 except ClientError as e:
     if e.response['Error']['Code'] in ['ConflictException', 'ValidationException']:
-        # Credential provider already exists, list and find it
+        # Credential provider already exists - delete and recreate to ensure API key is current
+        print(f"Credential provider already exists, updating with current API key...")
         try:
-            providers = acps.list_api_key_credential_providers()
-            credentialProviderARN = None
-            for provider in providers.get('credentialProviders', []):
-                if provider['name'] == MAINTAINX_API_KEY_PARAMETER_NAME:
-                    credentialProviderARN = provider['credentialProviderArn']
-                    print(f"Using existing credential provider: {credentialProviderARN}")
-                    break
+            # Delete existing provider
+            acps.delete_api_key_credential_provider(name=MAINTAINX_API_KEY_PARAMETER_NAME)
+            print(f"Deleted existing credential provider")
             
-            if not credentialProviderARN:
-                print(f"Error: Could not find existing credential provider {MAINTAINX_API_KEY_PARAMETER_NAME}")
+            # Wait for deletion to propagate
+            time.sleep(5)
+            
+            # Create new provider with current API key
+            response = acps.create_api_key_credential_provider(
+                name=MAINTAINX_API_KEY_PARAMETER_NAME,
+                apiKey=MAINTAINX_API_KEY,
+            )
+            credentialProviderARN = response['credentialProviderArn']
+            print(f"Created new credential provider with current API key: {credentialProviderARN}")
+            
+        except Exception as update_error:
+            print(f"Error updating credential provider: {update_error}")
+            # Try to find existing one as fallback
+            try:
+                providers = acps.list_api_key_credential_providers()
+                credentialProviderARN = None
+                for provider in providers.get('credentialProviders', []):
+                    if provider['name'] == MAINTAINX_API_KEY_PARAMETER_NAME:
+                        credentialProviderARN = provider['credentialProviderArn']
+                        print(f"Using existing credential provider: {credentialProviderARN}")
+                        print(f"WARNING: API key may not be current!")
+                        break
+                
+                if not credentialProviderARN:
+                    print(f"Error: Could not find existing credential provider {MAINTAINX_API_KEY_PARAMETER_NAME}")
+                    exit(1)
+            except Exception as list_error:
+                print(f"Error listing credential providers: {list_error}")
                 exit(1)
-        except Exception as list_error:
-            print(f"Error listing credential providers: {list_error}")
-            exit(1)
     else:
         print(f"Error creating credential provider: {e}")
         print(f"Error code: {e.response['Error']['Code']}")

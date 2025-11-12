@@ -4,6 +4,7 @@ import path from 'path';
 import { Server } from 'socket.io';
 import { fromCognitoIdentityPool } from "@aws-sdk/credential-providers";
 import { NovaSonicBidirectionalStreamClient, StreamSession } from './client';
+import { createAgentCoreMCPClient, AgentCoreMCPClient } from './agentcore-mcp-client';
 import { Buffer } from 'node:buffer';
 import * as fs from 'fs';
 
@@ -14,10 +15,20 @@ const runtimeConfig = JSON.parse(fs.readFileSync(runtimeConfigPath, 'utf-8'));
 const REGION = 'us-east-1';
 const IDENTITY_POOL_ID = runtimeConfig.IDENTITY_POOL_ID;
 const USER_POOL_ID = runtimeConfig.USER_POOL_ID;
+const GATEWAY_URL = runtimeConfig.GATEWAY_URL;
+const CLIENT_ID = runtimeConfig.CLIENT_ID;
+const CLIENT_SECRET = runtimeConfig.CLIENT_SECRET;
+const RESOURCE_SERVER_ID = runtimeConfig.RESOURCE_SERVER_ID;
+
+// Set environment variable for MCP client to access
+if (RESOURCE_SERVER_ID) {
+    process.env.RESOURCE_SERVER_ID = RESOURCE_SERVER_ID;
+}
 
 console.log('Cognito Configuration:');
 console.log('  Identity Pool ID:', IDENTITY_POOL_ID);
 console.log('  User Pool ID:', USER_POOL_ID);
+console.log('  Gateway URL:', GATEWAY_URL);
 
 // Create Express app and HTTP server
 const app = express();
@@ -26,6 +37,27 @@ const io = new Server(server);
 
 // Store Bedrock clients per socket (each user gets their own client with their JWT credentials)
 const socketBedrockClients = new Map<string, NovaSonicBidirectionalStreamClient>();
+
+// Global AgentCore MCP Client (uses M2M token for service authentication)
+let agentCoreMCPClient: AgentCoreMCPClient | undefined;
+
+// Initialize AgentCore MCP Client on server startup
+(async () => {
+    try {
+        console.log('Initializing AgentCore MCP Client...');
+        agentCoreMCPClient = await createAgentCoreMCPClient(
+            GATEWAY_URL,
+            CLIENT_ID,
+            CLIENT_SECRET,
+            USER_POOL_ID,
+            REGION
+        );
+        console.log('AgentCore MCP Client initialized successfully');
+    } catch (error) {
+        console.error('Failed to initialize AgentCore MCP Client:', error);
+        console.log('Server will continue without AgentCore integration');
+    }
+})();
 
 // Middleware to parse URL parameters and inject fault context
 app.use((req, res, next) => {
@@ -68,7 +100,8 @@ function createBedrockClientForUser(jwtToken: string): NovaSonicBidirectionalStr
         clientConfig: {
             region: REGION,
             credentials: credentials
-        }
+        },
+        agentCoreMCPClient: agentCoreMCPClient
     });
 }
 
@@ -398,6 +431,21 @@ io.on('connection', (socket) => {
                 const contextPrefix = `\n\nCurrent Alert Context:\n- Asset: ${faultContext.asset}\n- Fault Type: ${faultContext.fault}\n- Severity: ${faultContext.severity}\n- Alert ID: ${faultContext.alert}\n\nPlease assist the user with this specific maintenance issue.`;
                 systemPromptText = data + contextPrefix;
                 console.log(`Injected fault context into system prompt for ${socket.id}`);
+            }
+
+            // Add tool usage instructions if AgentCore is available
+            if (agentCoreMCPClient) {
+                const toolInstructions = `\n\nYou have access to maintenance tools that provide current, facility-specific information:
+
+1. searchKnowledgeBase - Use for repair procedures, troubleshooting guides, and technical documentation
+2. queryMaintainX - Use for asset locations, work order status, and team information
+
+When the user asks about asset locations or "where is" something, use queryMaintainX with action "list_assets".
+When the user asks how to fix or repair something, use searchKnowledgeBase.
+
+After using a tool, provide a clear, concise answer based on the results. Do not call multiple tools unless the user's question requires it.`;
+                systemPromptText = systemPromptText + toolInstructions;
+                console.log(`Added tool usage instructions to system prompt for ${socket.id}`);
             }
 
             await session.setupSystemPrompt(undefined, systemPromptText);

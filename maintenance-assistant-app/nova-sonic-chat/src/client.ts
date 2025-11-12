@@ -23,6 +23,7 @@ import {
   DefaultToolSchema,
   WeatherToolSchema
 } from "./consts";
+import { AgentCoreMCPClient } from "./agentcore-mcp-client";
 
 export interface NovaSonicBidirectionalStreamClientConfig {
   requestHandlerConfig?:
@@ -30,6 +31,7 @@ export interface NovaSonicBidirectionalStreamClientConfig {
   | Provider<NodeHttp2HandlerOptions | void>;
   clientConfig: Partial<BedrockRuntimeClientConfig>;
   inferenceConfig?: InferenceConfig;
+  agentCoreMCPClient?: AgentCoreMCPClient;
 }
 
 export class StreamSession {
@@ -157,6 +159,7 @@ export class NovaSonicBidirectionalStreamClient {
   private activeSessions: Map<string, SessionData> = new Map();
   private sessionLastActivity: Map<string, number> = new Map();
   private sessionCleanupInProgress = new Set<string>();
+  private agentCoreMCPClient?: AgentCoreMCPClient;
 
 
   constructor(config: NovaSonicBidirectionalStreamClientConfig) {
@@ -184,6 +187,8 @@ export class NovaSonicBidirectionalStreamClient {
       topP: 0.9,
       temperature: 0.7,
     };
+
+    this.agentCoreMCPClient = config.agentCoreMCPClient;
   }
 
   public isSessionActive(sessionId: string): boolean {
@@ -264,10 +269,120 @@ export class NovaSonicBidirectionalStreamClient {
           throw new Error('parsedContent is undefined');
         }
         return this.fetchWeatherData(parsedContent?.latitude, parsedContent?.longitude);
+      
+      // Meta-tool: Search Knowledge Base via AgentCore
+      case "searchknowledgebase":
+        console.log('Processing searchKnowledgeBase meta-tool');
+        if (!this.agentCoreMCPClient) {
+          throw new Error('AgentCore MCP Client not initialized');
+        }
+        const kbContent = await this.parseToolUseContent(toolUseContent);
+        if (!kbContent || !kbContent.query) {
+          throw new Error('Missing query parameter for searchKnowledgeBase');
+        }
+        // Call the RAG target in AgentCore
+        const kbResult = await this.agentCoreMCPClient.callTool(
+          'knowledge-base-lambda-target___search_knowledge_base',
+          { query: kbContent.query }
+        );
+        return kbResult;
+      
+      // Meta-tool: Query MaintainX via AgentCore
+      case "querymaintainx":
+        console.log('Processing queryMaintainX meta-tool');
+        if (!this.agentCoreMCPClient) {
+          throw new Error('AgentCore MCP Client not initialized');
+        }
+        const mxContent = await this.parseToolUseContent(toolUseContent);
+        if (!mxContent || !mxContent.action) {
+          throw new Error('Missing action parameter for queryMaintainX');
+        }
+        
+        console.log('MaintainX action:', mxContent.action);
+        console.log('MaintainX parameters:', mxContent.parameters);
+        
+        // Map action to MaintainX tool name
+        const maintainxToolName = this.mapActionToMaintainXTool(mxContent.action);
+        
+        // Prepare parameters with defaults
+        const toolParams = mxContent.parameters || {};
+        
+        // Add default limit if not specified for list operations
+        if (maintainxToolName.includes('get_assets') || 
+            maintainxToolName.includes('get_locations') ||
+            maintainxToolName.includes('get_workorders') ||
+            maintainxToolName.includes('get_users')) {
+          if (!toolParams.limit) {
+            toolParams.limit = 100;
+          }
+        }
+        
+        console.log('Calling MaintainX tool with params:', toolParams);
+        
+        try {
+          const mxResult = await this.agentCoreMCPClient.callTool(
+            maintainxToolName,
+            toolParams
+          );
+          
+          // Log result size to help debug
+          const resultStr = JSON.stringify(mxResult);
+          console.log(`MaintainX tool result size: ${resultStr.length} characters`);
+          if (resultStr.length > 5000) {
+            console.warn('Large tool result may cause issues');
+          }
+          
+          return mxResult;
+        } catch (error) {
+          console.error('Error calling MaintainX tool:', error);
+          return {
+            error: 'Failed to query MaintainX',
+            details: error instanceof Error ? error.message : String(error)
+          };
+        }
+      
       default:
         console.log(`Tool ${tool} not supported`)
         throw new Error(`Tool ${tool} not supported`);
     }
+  }
+
+  /**
+   * Parse tool use content to extract arguments
+   */
+  private async parseToolUseContent(toolUseContent: any): Promise<any> {
+    try {
+      if (toolUseContent && typeof toolUseContent.content === 'string') {
+        return JSON.parse(toolUseContent.content);
+      }
+      return toolUseContent;
+    } catch (error) {
+      console.error("Failed to parse tool use content:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Map MaintainX action to AgentCore tool name
+   * Using OpenAPI-based tools from sample-agentcore-gateway-target
+   */
+  private mapActionToMaintainXTool(action: string): string {
+    const actionMap: { [key: string]: string } = {
+      'list_assets': 'sample-agentcore-gateway-target___listAssets',
+      'get_asset': 'sample-agentcore-gateway-target___getAsset',
+      'list_work_orders': 'sample-agentcore-gateway-target___listWorkOrders',
+      'get_work_order': 'sample-agentcore-gateway-target___getWorkOrder',
+      'list_locations': 'sample-agentcore-gateway-target___listLocations',
+      'list_users': 'sample-agentcore-gateway-target___listUsers',
+      'create_work_order': 'sample-agentcore-gateway-target___createWorkOrder',
+      'update_work_order': 'sample-agentcore-gateway-target___updateWorkOrder'
+    };
+
+    const toolName = actionMap[action];
+    if (!toolName) {
+      throw new Error(`Unknown MaintainX action: ${action}. Available actions: ${Object.keys(actionMap).join(', ')}`);
+    }
+    return toolName;
   }
 
   private async parseToolUseContentForWeather(toolUseContent: any): Promise<{ latitude: number; longitude: number; } | null> {
@@ -615,6 +730,79 @@ export class NovaSonicBidirectionalStreamClient {
     console.log(`Setting up prompt start event for session ${sessionId}...`);
     const session = this.activeSessions.get(sessionId);
     if (!session) return;
+
+    // Build tools array - start with default tools
+    const tools: any[] = [
+      {
+        toolSpec: {
+          name: "getDateAndTimeTool",
+          description: "Get information about the current date and time.",
+          inputSchema: {
+            json: DefaultToolSchema
+          }
+        }
+      },
+      {
+        toolSpec: {
+          name: "getWeatherTool",
+          description: "Get the current weather for a given location, based on its WGS84 coordinates.",
+          inputSchema: {
+            json: WeatherToolSchema
+          }
+        }
+      }
+    ];
+
+    // Add AgentCore meta-tools if MCP client is available
+    if (this.agentCoreMCPClient) {
+      console.log('Adding AgentCore meta-tools to Nova Sonic session');
+      
+      // Meta-tool 1: Search Knowledge Base
+      tools.push({
+        toolSpec: {
+          name: "searchKnowledgeBase",
+          description: "Search the maintenance knowledge base for repair manuals, troubleshooting guides, technical documentation, and maintenance procedures. ALWAYS use this tool when the user asks: how to fix/repair something, maintenance procedures, technical specifications, troubleshooting steps, or any technical question about equipment.",
+          inputSchema: {
+            json: JSON.stringify({
+              type: "object",
+              properties: {
+                query: {
+                  type: "string",
+                  description: "The search query for finding relevant maintenance documentation"
+                }
+              },
+              required: ["query"]
+            })
+          }
+        }
+      });
+
+      // Meta-tool 2: Query MaintainX
+      tools.push({
+        toolSpec: {
+          name: "queryMaintainX",
+          description: "Query the MaintainX CMMS system for real-time asset information, work orders, locations, and users. ALWAYS use this tool when the user asks about: asset locations, asset details, work order status, team members, facility locations, or any question about 'where' something is located. Use 'list_assets' to get all assets, 'list_locations' to get facility locations, 'list_work_orders' for work orders, 'list_users' for team members.",
+          inputSchema: {
+            json: JSON.stringify({
+              type: "object",
+              properties: {
+                action: {
+                  type: "string",
+                  enum: ["list_assets", "get_asset", "list_work_orders", "get_work_order", "list_locations", "list_users", "create_work_order"],
+                  description: "The action to perform in MaintainX"
+                },
+                parameters: {
+                  type: "object",
+                  description: "Parameters for the action (e.g., filters, IDs)"
+                }
+              },
+              required: ["action"]
+            })
+          }
+        }
+      });
+    }
+
     // Prompt start event
     this.addEventToSessionQueue(sessionId, {
       event: {
@@ -628,25 +816,7 @@ export class NovaSonicBidirectionalStreamClient {
             mediaType: "application/json",
           },
           toolConfiguration: {
-            tools: [{
-              toolSpec: {
-                name: "getDateAndTimeTool",
-                description: "Get information about the current date and time.",
-                inputSchema: {
-                  json: DefaultToolSchema
-                }
-              }
-            },
-            {
-              toolSpec: {
-                name: "getWeatherTool",
-                description: "Get the current weather for a given location, based on its WGS84 coordinates.",
-                inputSchema: {
-                  json: WeatherToolSchema
-                }
-              }
-            }
-            ]
+            tools: tools
           },
         },
       }
@@ -751,7 +921,24 @@ export class NovaSonicBidirectionalStreamClient {
     console.log("inside tool result")
     if (!session || !session.isActive) return;
 
+    // Ensure result is a string
+    let resultContent: string;
+    if (typeof result === 'string') {
+      resultContent = result;
+    } else if (result === null || result === undefined) {
+      resultContent = JSON.stringify({ error: 'No result returned from tool' });
+    } else {
+      try {
+        resultContent = JSON.stringify(result);
+      } catch (e) {
+        resultContent = String(result);
+      }
+    }
+    
     console.log(`Sending tool result for session ${sessionId}, tool use ID: ${toolUseId}`);
+    console.log(`Tool result preview: ${resultContent.substring(0, 200)}...`);
+    console.log(`Tool result length: ${resultContent.length} characters`);
+    
     const contentId = randomUUID();
 
     // Tool content start
@@ -774,8 +961,7 @@ export class NovaSonicBidirectionalStreamClient {
       }
     });
 
-    // Tool content input
-    const resultContent = typeof result === 'string' ? result : JSON.stringify(result);
+    // Tool content input (resultContent already defined above)
     this.addEventToSessionQueue(sessionId, {
       event: {
         toolResult: {

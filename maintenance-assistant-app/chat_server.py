@@ -335,7 +335,7 @@ def chat():
                 # Create BedrockModel - it will use the environment credentials
                 model = BedrockModel(
                     model_id=config['MODEL'],  # Use model from runtime config
-                    temperature=0,  # Use greedy decoding for better tool use
+                    temperature=0.7,
                     streaming=False
                 )
             finally:
