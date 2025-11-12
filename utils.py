@@ -292,10 +292,15 @@ def create_post_confirmation_lambda(user_pool_id):
                 PolicyDocument=json.dumps(cognito_policy)
             )
             
+            # Wait for role and policies to propagate
+            print(f"Waiting for IAM role to propagate...")
+            time.sleep(10)
+            
         except iam_client.exceptions.EntityAlreadyExistsException:
             # Role already exists, get its ARN
             role_response = iam_client.get_role(RoleName=role_name)
             role_arn = role_response['Role']['Arn']
+            print(f"Using existing IAM role: {role_name}")
         
         # Create deployment package
         zip_filename = 'cognito_trigger.zip'
@@ -333,43 +338,88 @@ def create_post_confirmation_lambda(user_pool_id):
         # Clean up zip file
         os.remove(zip_filename)
         
-        print(f"Created Lambda function: {function_arn}")
+        # Verify Lambda function is ready
+        try:
+            lambda_client.get_function(FunctionName=function_name)
+            print(f"✓ Lambda function verified and ready: {function_arn}")
+        except Exception as verify_error:
+            print(f"⚠ Warning: Could not verify Lambda function: {verify_error}")
+        
         return function_arn
         
     except Exception as e:
-        print(f"Failed to create Lambda function: {e}")
+        print(f"✗ Failed to create Lambda function: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
-def configure_cognito_trigger(cognito, user_pool_id, lambda_function_arn):
-    """Configure Cognito to use Lambda trigger"""
+def configure_cognito_trigger(cognito, user_pool_id, lambda_function_arn, account_id, region):
+    """Configure Cognito to use Lambda trigger - returns True on success, False on failure"""
     try:
-        # Add Lambda permission for Cognito to invoke
-        lambda_client = boto3.client('lambda')
+        lambda_client = boto3.client('lambda', region_name=region)
         
+        # Step 1: Add Lambda permission for Cognito to invoke
+        print("  Adding Lambda invoke permission for Cognito...")
         try:
             lambda_client.add_permission(
                 FunctionName=lambda_function_arn,
                 StatementId='CognitoTriggerPermission',
                 Action='lambda:InvokeFunction',
                 Principal='cognito-idp.amazonaws.com',
-                SourceArn=f"arn:aws:cognito-idp:*:*:userpool/{user_pool_id}"
+                SourceArn=f"arn:aws:cognito-idp:{region}:{account_id}:userpool/{user_pool_id}"
             )
+            print("  ✓ Lambda permission added")
         except lambda_client.exceptions.ResourceConflictException:
-            # Permission already exists
-            pass
+            print("  ✓ Lambda permission already exists")
+        except Exception as perm_error:
+            print(f"  ✗ Failed to add Lambda permission: {perm_error}")
+            return False
         
-        # Update user pool with Lambda trigger
-        cognito.update_user_pool(
-            UserPoolId=user_pool_id,
-            LambdaConfig={
-                'PostConfirmation': lambda_function_arn
-            }
-        )
+        # Step 2: Verify Lambda permission was added
+        try:
+            policy = lambda_client.get_policy(FunctionName=lambda_function_arn)
+            if 'CognitoTriggerPermission' not in policy['Policy']:
+                print("  ✗ Lambda permission not found in policy after adding")
+                return False
+            print("  ✓ Lambda permission verified")
+        except Exception as verify_error:
+            print(f"  ⚠ Could not verify Lambda permission: {verify_error}")
+            # Continue anyway - permission might exist
         
-        print(f"Configured Cognito trigger for user pool: {user_pool_id}")
+        # Step 3: Update user pool with Lambda trigger
+        print("  Configuring Cognito User Pool trigger...")
+        try:
+            cognito.update_user_pool(
+                UserPoolId=user_pool_id,
+                LambdaConfig={
+                    'PostConfirmation': lambda_function_arn
+                }
+            )
+            print("  ✓ User Pool trigger configured")
+        except Exception as update_error:
+            print(f"  ✗ Failed to update User Pool: {update_error}")
+            return False
+        
+        # Step 4: Verify trigger was configured
+        try:
+            pool_info = cognito.describe_user_pool(UserPoolId=user_pool_id)
+            lambda_config = pool_info['UserPool'].get('LambdaConfig', {})
+            if lambda_config.get('PostConfirmation') != lambda_function_arn:
+                print(f"  ✗ Trigger verification failed. Expected: {lambda_function_arn}, Got: {lambda_config.get('PostConfirmation')}")
+                return False
+            print("  ✓ Trigger configuration verified")
+        except Exception as verify_error:
+            print(f"  ⚠ Could not verify trigger configuration: {verify_error}")
+            # Continue anyway - trigger might be configured
+        
+        print(f"✓ Successfully configured Cognito trigger for user pool: {user_pool_id}")
+        return True
         
     except Exception as e:
-        print(f"Failed to configure Cognito trigger: {e}")
+        print(f"✗ Failed to configure Cognito trigger: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 def create_identity_pool(user_pool_id, user_app_client_id, region):
     """Create Cognito Identity Pool for AWS credential federation"""
@@ -643,10 +693,20 @@ def create_identity_pool_roles(identity_pool_id, region):
             print(f"Created IAM role: {role_name}")
             
         except iam_client.exceptions.EntityAlreadyExistsException:
-            # Role already exists
+            # Role already exists - update trust policy with new Identity Pool ID
+            print(f"IAM role {role_name} already exists, updating trust policy...")
+            
+            try:
+                iam_client.update_assume_role_policy(
+                    RoleName=role_name,
+                    PolicyDocument=json.dumps(trust_policy)
+                )
+                print(f"✓ Updated trust policy for {role_name}")
+            except Exception as update_error:
+                print(f"⚠ Warning: Could not update trust policy for {role_name}: {update_error}")
+            
             role_response = iam_client.get_role(RoleName=role_name)
             created_roles[role_name] = role_response['Role']['Arn']
-            print(f"IAM role {role_name} already exists")
         except Exception as e:
             print(f"Failed to create IAM role {role_name}: {e}")
     

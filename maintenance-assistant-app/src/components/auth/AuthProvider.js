@@ -71,18 +71,38 @@ export const AuthProvider = ({ children }) => {
       setLoading(true);
       const currentUser = await getCurrentUser();
       
-      // Try to get session with AWS credentials
-      let session;
+      // Try to get session - first without credentials, then with
+      let session = { tokens: null };
       let hasAwsCredentials = false;
       
       try {
-        session = await fetchAuthSession();
-        hasAwsCredentials = !!(session.credentials && session.credentials.accessKeyId);
-        console.log('AWS credentials available:', hasAwsCredentials);
+        // Try to get just the tokens first (no AWS credentials needed)
+        console.log('Fetching auth session...');
+        const authSession = await fetchAuthSession({ forceRefresh: true });
+        
+        console.log('Session retrieved, checking structure...');
+        console.log('Session keys:', Object.keys(authSession));
+        
+        if (authSession.tokens) {
+          session = authSession;
+          console.log('✓ Tokens found in session');
+          console.log('Token keys:', Object.keys(authSession.tokens));
+          
+          const idToken = authSession.tokens.idToken?.toString();
+          const accessToken = authSession.tokens.accessToken?.toString();
+          console.log('ID Token:', idToken ? `present (${idToken.substring(0, 20)}...)` : 'MISSING');
+          console.log('Access Token:', accessToken ? 'present' : 'MISSING');
+        } else {
+          console.error('✗ No tokens in session!');
+          console.error('Session structure:', JSON.stringify(authSession, null, 2));
+        }
+        
+        hasAwsCredentials = !!(authSession.credentials && authSession.credentials.accessKeyId);
+        console.log('AWS credentials:', hasAwsCredentials ? 'available' : 'not available');
+        
       } catch (sessionError) {
-        console.warn('Failed to get AWS credentials, using basic auth:', sessionError.message);
-        // Continue with basic authentication
-        session = { tokens: null };
+        console.error('✗ Failed to fetch session:', sessionError.message);
+        console.error('Error details:', sessionError);
       }
       
       setUser({
@@ -95,6 +115,7 @@ export const AuthProvider = ({ children }) => {
       });
       
       console.log('Authentication successful');
+      console.log('User object set with tokens:', session.tokens ? 'yes' : 'no');
       
     } catch (error) {
       console.log('Auth check failed:', error.message);

@@ -14,13 +14,18 @@ function AppContent() {
   
   // Helper function to get authentication headers
   const getAuthHeaders = () => {
-    if (user && user.tokens && user.tokens.idToken) {
-      console.log('Auth headers available, user:', user.email);
-      return {
-        'Authorization': `Bearer ${user.tokens.idToken.toString()}`
-      };
+    if (user && user.tokens) {
+      // In Amplify v6, idToken is a JWT object with toString() method
+      const token = user.tokens.idToken?.toString();
+      if (token) {
+        console.log('Auth headers available, user:', user.email);
+        return {
+          'Authorization': `Bearer ${token}`
+        };
+      }
     }
     console.log('No auth headers available, user:', user ? 'exists but no tokens' : 'null');
+    console.log('User tokens:', user?.tokens);
     return {};
   };
   const [currentView, setCurrentView] = useState(() => {

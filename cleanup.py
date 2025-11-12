@@ -50,15 +50,21 @@ if 'LAMBDA_FUNCTION_ARN' in config_data:
     except Exception as e:
         print(f"Lambda function not found: {e}")
     
+    # Delete all inline policies from the role
     try:
-        safe_delete(
-            iam_client.delete_role_policy,
-            "Lambda role policy: KnowledgeBaseLambdaPolicy",
-            RoleName='KnowledgeBaseLambdaRole',
-            PolicyName='KnowledgeBaseLambdaPolicy'
-        )
-    except:
-        pass
+        inline_policies = iam_client.list_role_policies(RoleName='KnowledgeBaseLambdaRole')
+        for policy_name in inline_policies.get('PolicyNames', []):
+            safe_delete(
+                iam_client.delete_role_policy,
+                f"Lambda role policy: {policy_name}",
+                RoleName='KnowledgeBaseLambdaRole',
+                PolicyName=policy_name
+            )
+        # Wait for policy deletion to propagate
+        if inline_policies.get('PolicyNames'):
+            time.sleep(2)
+    except Exception as e:
+        print(f"Error deleting inline policies: {e}")
     
     try:
         safe_delete(
@@ -447,14 +453,11 @@ if 'IDENTITY_POOL_ID' in config_data:
             IdentityPoolId=config_data['IDENTITY_POOL_ID']
         )
         
-        # Delete associated IAM roles
-        identity_pool_name = identity_pool.get('IdentityPoolName', 'maintenance-assistant')
+        # Delete associated IAM roles (actual role names from utils.py)
         role_names = [
-            f'Cognito_{identity_pool_name}_Auth_Role',
-            f'Cognito_{identity_pool_name}_Unauth_Role',
-            f'Cognito_{identity_pool_name}_Administrators_Role',
-            f'Cognito_{identity_pool_name}_Technicians_Role',
-            f'Cognito_{identity_pool_name}_Viewers_Role'
+            'MaintenanceAdministrator',
+            'MaintenanceOperator',
+            'MaintenanceViewer'
         ]
         
         for role_name in role_names:
@@ -490,7 +493,7 @@ if 'IDENTITY_POOL_ID' in config_data:
 # Delete Cognito User Groups
 if 'USER_POOL_ID' in config_data:
     print("Deleting Cognito User Groups...")
-    group_names = ['Administrators', 'Technicians', 'Viewers']
+    group_names = ['Administrators', 'Operators', 'Viewers']
     
     for group_name in group_names:
         try:

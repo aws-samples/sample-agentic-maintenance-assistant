@@ -74,6 +74,13 @@ def update_runtime_config(key, value):
     with open(runtime_config_filepath, 'w') as config_file:
         json.dump(config_data, config_file, indent=2)
 
+# Get AWS account ID and region early for use throughout setup
+sts_client = boto3.client('sts', region_name=REGION)
+account_id = sts_client.get_caller_identity()["Account"]
+region = REGION
+print(f"AWS Account ID: {account_id}")
+print(f"AWS Region: {region}")
+
 # Create an IAM role for the Gateway to assume
 agentcore_gateway_iam_role = utils.create_agentcore_gateway_role("sample-lambdagateway")
 print("Agentcore gateway role ARN: ", agentcore_gateway_iam_role['Role']['Arn'])
@@ -115,9 +122,21 @@ utils.create_user_groups(cognito, user_pool_id)
 print("Setting up Lambda trigger for auto-group assignment...")
 lambda_function_arn = utils.create_post_confirmation_lambda(user_pool_id)
 if lambda_function_arn:
-    utils.configure_cognito_trigger(cognito, user_pool_id, lambda_function_arn)
+    # Configure the trigger - this is critical for auto-adding users to groups
+    trigger_configured = utils.configure_cognito_trigger(cognito, user_pool_id, lambda_function_arn, account_id, region)
+    if not trigger_configured:
+        print("ERROR: Failed to configure Cognito Lambda trigger!")
+        print("Users will NOT be automatically added to groups on signup.")
+        print("You may need to manually add users to groups or re-run setup.")
+        # Don't exit - continue with setup, but warn user
+    else:
+        print("✓ Lambda trigger successfully configured")
+    
     update_runtime_config("POST_CONFIRMATION_LAMBDA_ARN", lambda_function_arn)
     update_runtime_config("POST_CONFIRMATION_LAMBDA_NAME", "CognitoPostConfirmationTrigger")
+else:
+    print("WARNING: Post-confirmation Lambda was not created!")
+    print("Users will need to be manually added to groups.")
 
 # Create Cognito Identity Pool for AWS credential federation
 print("Creating Cognito Identity Pool for AWS credential federation...")
@@ -233,11 +252,7 @@ update_runtime_config("CREDENTIAL_PROVIDER_ARN", credentialProviderARN)
 # Create an S3 client
 session = boto3.session.Session()
 s3_client = session.client('s3')
-sts_client = session.client('sts')
-
-# Retrieve AWS account ID and region
-account_id = sts_client.get_caller_identity()["Account"]
-region = session.region_name or REGION
+# account_id and region already defined at top of file
 # Define parameters
 # Your s3 bucket to upload the OpenAPI json file.
 bucket_name = f'{S3_BUCKET_NAME}-{account_id}-{region}'
