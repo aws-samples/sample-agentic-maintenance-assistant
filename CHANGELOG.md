@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 11-12-2025
+
+### Added
+- Nova Sonic speech-to-speech interface replacing text-based chat
+- Real-time voice interaction with maintenance assistant
+- WebSocket-based audio streaming for low-latency responses
+
+### Changed
+- Enhanced setup.py with automatic credential provider management
+- Improved error handling
+- Temporarily removed text-based chat functionality. Will be added back in the next release, so both text and audio can be used together
+
 ## [1.0.0] - 09-29-2025
 
 ### Added
