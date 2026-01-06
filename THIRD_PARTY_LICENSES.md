@@ -28,7 +28,6 @@ This document lists the third-party dependencies and their licenses used in this
 
 ### Agent Frameworks
 - **strands-agents** - Apache License 2.0 - Framework for agentic workflows
-- **amazon-bedrock-agentcore-sdk** - Apache License 2.0 - Amazon Bedrock AgentCore SDK
 
 ## JavaScript/Node.js Dependencies
 
