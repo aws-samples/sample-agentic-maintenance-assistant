@@ -7,7 +7,7 @@
     "react-dom": "^18.2.0",
     "react-scripts": "5.0.1",
     "recharts": "^2.8.0",
-    "axios": "^1.6.0",
+    "axios": "^1.13.5",
     "aws-amplify": "^6.0.0",
     "@aws-amplify/ui-react": "^6.0.0"
   },
