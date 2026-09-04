@@ -68,12 +68,41 @@ Focus on practical solutions and safety considerations.`;
 function displayFaultContext() {
     const contextDiv = document.createElement('div');
     contextDiv.className = 'fault-context';
-    contextDiv.innerHTML = `
-        <h3>Alert Context</h3>
-        <p><strong>Asset:</strong> ${faultContext.asset}</p>
-        <p><strong>Fault Type:</strong> ${faultContext.fault}</p>
-        <p><strong>Severity:</strong> <span class="severity-${faultContext.severity}">${faultContext.severity.toUpperCase()}</span></p>
-    `;
+
+    // Build DOM safely: URL-derived values are set via textContent so they are
+    // rendered as text, never parsed as HTML (prevents DOM-based XSS).
+    const ALLOWED_SEVERITIES = ['low', 'medium', 'high', 'unknown'];
+    const safeSeverityClass = ALLOWED_SEVERITIES.includes(faultContext.severity)
+        ? faultContext.severity
+        : 'unknown';
+
+    const heading = document.createElement('h3');
+    heading.textContent = 'Alert Context';
+    contextDiv.appendChild(heading);
+
+    const makeRow = (label, value) => {
+        const p = document.createElement('p');
+        const strong = document.createElement('strong');
+        strong.textContent = label;
+        p.appendChild(strong);
+        p.appendChild(document.createTextNode(' ' + value));
+        return p;
+    };
+
+    contextDiv.appendChild(makeRow('Asset:', faultContext.asset));
+    contextDiv.appendChild(makeRow('Fault Type:', faultContext.fault));
+
+    const severityRow = document.createElement('p');
+    const severityStrong = document.createElement('strong');
+    severityStrong.textContent = 'Severity:';
+    severityRow.appendChild(severityStrong);
+    severityRow.appendChild(document.createTextNode(' '));
+    const severityValue = document.createElement('span');
+    severityValue.className = `severity-${safeSeverityClass}`;
+    severityValue.textContent = String(faultContext.severity).toUpperCase();
+    severityRow.appendChild(severityValue);
+    contextDiv.appendChild(severityRow);
+
     const appDiv = document.getElementById('app');
     const statusDiv = document.getElementById('status');
     appDiv.insertBefore(contextDiv, statusDiv);
