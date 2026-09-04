@@ -33,5 +33,8 @@
   "devDependencies": {
     "tsx": "^4.19.3",
     "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "fast-xml-parser": "^5.11.1"
   }
 }
