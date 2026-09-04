@@ -11,6 +11,11 @@
     "aws-amplify": "^6.0.0",
     "@aws-amplify/ui-react": "^6.0.0"
   },
+  "overrides": {
+    "fast-xml-parser": "^5.11.1",
+    "shell-quote": "^1.10.0",
+    "websocket-driver": "^0.7.5"
+  },
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
