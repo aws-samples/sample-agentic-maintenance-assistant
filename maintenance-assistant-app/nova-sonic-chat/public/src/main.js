@@ -67,13 +67,46 @@ Focus on practical solutions and safety considerations.`;
 function displayFaultContext() {
     const contextDiv = document.createElement('div');
     contextDiv.className = 'fault-context';
-    contextDiv.innerHTML = `
-        <span><strong>Asset:</strong> ${faultContext.asset}</span>
-        <span class="separator">•</span>
-        <span><strong>Fault:</strong> ${faultContext.fault}</span>
-        <span class="separator">•</span>
-        <span><strong>Severity:</strong> <span class="severity-${faultContext.severity}">${faultContext.severity.toUpperCase()}</span></span>
-    `;
+
+    // Build DOM safely: URL-derived values are set via textContent so they are
+    // rendered as text, never parsed as HTML (prevents DOM-based XSS).
+    const ALLOWED_SEVERITIES = ['low', 'medium', 'high', 'unknown'];
+    const safeSeverityClass = ALLOWED_SEVERITIES.includes(faultContext.severity)
+        ? faultContext.severity
+        : 'unknown';
+
+    const makeLabeled = (label, value) => {
+        const span = document.createElement('span');
+        const strong = document.createElement('strong');
+        strong.textContent = label;
+        span.appendChild(strong);
+        span.appendChild(document.createTextNode(' ' + value));
+        return span;
+    };
+
+    const makeSeparator = () => {
+        const sep = document.createElement('span');
+        sep.className = 'separator';
+        sep.textContent = '•';
+        return sep;
+    };
+
+    contextDiv.appendChild(makeLabeled('Asset:', faultContext.asset));
+    contextDiv.appendChild(makeSeparator());
+    contextDiv.appendChild(makeLabeled('Fault:', faultContext.fault));
+    contextDiv.appendChild(makeSeparator());
+
+    const severityWrapper = document.createElement('span');
+    const severityStrong = document.createElement('strong');
+    severityStrong.textContent = 'Severity:';
+    severityWrapper.appendChild(severityStrong);
+    severityWrapper.appendChild(document.createTextNode(' '));
+    const severityValue = document.createElement('span');
+    severityValue.className = `severity-${safeSeverityClass}`;
+    severityValue.textContent = String(faultContext.severity).toUpperCase();
+    severityWrapper.appendChild(severityValue);
+    contextDiv.appendChild(severityWrapper);
+
     const appDiv = document.getElementById('app');
     appDiv.appendChild(contextDiv);
 }
