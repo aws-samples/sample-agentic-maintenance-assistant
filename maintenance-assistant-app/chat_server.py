@@ -15,7 +15,17 @@ def get_runtime_config_path():
     return os.path.join(parent_dir, 'runtime_config.json')
 
 from strands.models import BedrockModel
-from mcp.client.streamable_http import streamablehttp_client 
+import inspect as _inspect
+try:
+    # mcp < 2.x: streamablehttp_client(url, headers=...)
+    from mcp.client.streamable_http import streamablehttp_client
+except ImportError:
+    # mcp >= 2.x renamed this export to streamable_http_client and dropped the
+    # `headers` kwarg in favour of passing a pre-configured httpx2.AsyncClient.
+    from mcp.client.streamable_http import streamable_http_client as streamablehttp_client
+
+# Whether the installed mcp transport accepts a `headers` kwarg (old API) or not (new API)
+_TRANSPORT_ACCEPTS_HEADERS = 'headers' in _inspect.signature(streamablehttp_client).parameters
 from strands.tools.mcp.mcp_client import MCPClient
 from strands import Agent
 import utils
@@ -48,7 +58,16 @@ def get_access_token(config):
     return token_response["access_token"]
 
 def create_streamable_http_transport(gateway_url, access_token):
-    return streamablehttp_client(gateway_url, headers={"Authorization": f"Bearer {access_token}"})
+    auth_headers = {"Authorization": f"Bearer {access_token}"}
+    if _TRANSPORT_ACCEPTS_HEADERS:
+        # Old mcp API: pass headers directly
+        return streamablehttp_client(gateway_url, headers=auth_headers)
+    # New mcp API (>= 2.x): configure auth via a pre-built httpx2.AsyncClient
+    import httpx2
+    return streamablehttp_client(
+        gateway_url,
+        http_client=httpx2.AsyncClient(headers=auth_headers),
+    )
 
 def verify_user_token(token):
     """Verify JWT token and extract user information"""

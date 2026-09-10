@@ -316,6 +316,23 @@ export class NovaSonicBidirectionalStreamClient {
             toolParams.limit = 100;
           }
         }
+
+        // Safety net for create_work_order: the MaintainX createWorkOrder API
+        // requires a 'title' and uses camelCase 'assetId'. Speech models often
+        // omit the title or pass 'asset_id', which triggers a ValidationException.
+        // Normalise the params here so the demo flow succeeds.
+        if (mxContent.action === 'create_work_order') {
+          // Normalise snake_case asset_id -> assetId
+          if (toolParams.asset_id && !toolParams.assetId) {
+            toolParams.assetId = toolParams.asset_id;
+            delete toolParams.asset_id;
+          }
+          // Synthesise a sensible title if the model didn't supply one
+          if (!toolParams.title || String(toolParams.title).trim() === '') {
+            const assetLabel = toolParams.assetId || 'asset';
+            toolParams.title = `Maintenance work order for ${assetLabel}`;
+          }
+        }
         
         console.log('Calling MaintainX tool with params:', toolParams);
         
@@ -331,7 +348,19 @@ export class NovaSonicBidirectionalStreamClient {
           if (resultStr.length > 5000) {
             console.warn('Large tool result may cause issues');
           }
-          
+
+          // Nova Sonic expects tool results as parseable JSON (toolUseOutputConfiguration
+          // mediaType is application/json). If MaintainX returns a plain string — which it
+          // does for validation errors like "ValidationException - Missing required field
+          // 'title'" — returning it raw breaks the response stream. Wrap any non-object
+          // result (and error-looking strings) into a small JSON object the model can read.
+          if (typeof mxResult === 'string') {
+            const looksLikeError = /error|exception|validation|missing|invalid/i.test(mxResult);
+            return looksLikeError
+              ? { success: false, error: mxResult }
+              : { success: true, result: mxResult };
+          }
+
           return mxResult;
         } catch (error) {
           console.error('Error calling MaintainX tool:', error);
@@ -793,7 +822,7 @@ export class NovaSonicBidirectionalStreamClient {
                 },
                 parameters: {
                   type: "object",
-                  description: "Parameters for the action (e.g., filters, IDs)"
+                  description: "Parameters for the action. For 'create_work_order' you MUST provide a 'title' (short summary of the work). Optional fields: 'description', 'priority' (LOW/MEDIUM/HIGH), 'assetId', 'locationId'. Example: {\"title\": \"Replace bearing on Main Roller Coaster\", \"priority\": \"HIGH\", \"assetId\": \"Main Roller Coaster\"}. For 'get_asset'/'get_work_order' provide the relevant 'id'."
                 }
               },
               required: ["action"]
