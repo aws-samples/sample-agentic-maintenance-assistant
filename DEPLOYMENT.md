@@ -19,7 +19,8 @@ This guide provides step-by-step instructions for deploying the Industry-Agnosti
 - AWS IAM
 
 ### Local Development Environment
-- Python 3.9 or higher
+- Python 3.9–3.12 (TensorFlow, required by the LSTM fault classifier, does not yet publish
+  wheels for Python 3.13+; use a 3.12 virtual environment if your system Python is newer)
 - Node.js 16 or higher
 - npm or yarn package manager
 - Git
@@ -89,7 +90,11 @@ Create `setup_config.json` in the root directory. You can use the provided 'setu
 2. Navigate to "Model access"
 3. Request access to required models:
    - `us.amazon.nova-pro-v1:0`
-   - `anthropic.claude-3-haiku-20240307-v1:0`
+   - A currently available Anthropic Claude model for the chat backend (set via `MODEL`
+     in `runtime_config.json`). The older `anthropic.claude-3-haiku-20240307-v1:0` has been
+     retired; use a current model or inference-profile ID for your account, for example
+     `us.anthropic.claude-haiku-4-5-20251001-v1:0`.
+   - `amazon.nova-sonic-v1:0` (required for the voice / speech-to-speech interface)
    - `amazon.titan-embed-text-v1`
 
 ## Step 3: Infrastructure Deployment
@@ -311,6 +316,30 @@ export GATEWAY_URL=https://xxxxxxxxx.execute-api.us-east-1.amazonaws.com
 - Ensure Identity Pool has proper trust relationships
 - Verify Bedrock model access permissions for user roles
 - Check for expired AWS credentials and refresh logic
+
+#### 7. Text Chat Server Fails to Start (mcp import error)
+- Symptom: `chat_server.py` exits with `ImportError: cannot import name 'streamablehttp_client'`
+  or a call fails with `streamable_http_client() got an unexpected keyword argument 'headers'`.
+- Cause: newer `mcp` (2.x) renamed `streamablehttp_client` to `streamable_http_client` and
+  dropped the `headers` argument in favour of a pre-configured `httpx2.AsyncClient`.
+- Fix: this is handled by version-adaptive code in `chat_server.py` (v2.0.1+). If you see it
+  on an older checkout, update `chat_server.py` or pin a compatible `mcp` version.
+
+#### 8. Voice (Nova Sonic) Work Order / Tool Errors
+- Symptom: after speech is transcribed, the assistant replies "Error processing response
+  stream" or "internal error while trying to create the work order".
+- Causes and checks, in order:
+  1. **Deleted MaintainX credential provider.** All MaintainX tools (list assets, create
+     work order, etc.) fail with a generic "An internal error occurred" if the AgentCore
+     API-key credential provider `MaintainxAPIKey` is missing. Verify it exists; recreate it
+     with your MaintainX API key if a partial cleanup removed it. The Knowledge Base tools
+     will keep working even when MaintainX is broken, which is a useful signal.
+  2. **Missing `title` on create_work_order.** MaintainX `createWorkOrder` requires `title`
+     and uses camelCase `assetId`. v2.0.1+ normalizes these in the Nova Sonic handler.
+  3. **Non-JSON tool result crashing the stream.** Nova Sonic expects JSON tool results;
+     v2.0.1+ wraps error strings in JSON so a tool error no longer aborts the stream.
+- Verify the underlying MaintainX API key independently:
+  `curl -H "Authorization: Bearer <key>" https://api.getmaintainx.com/v1/assets?limit=1`
 
 ### Getting Help
 - Check CloudWatch logs for detailed error messages

@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] - 09-10-2026
+
+### Fixed
+- **Text chat startup failure on newer `mcp` versions**: `chat_server.py` imported
+  `streamablehttp_client` from `mcp.client.streamable_http`, which `mcp` 2.x renamed to
+  `streamable_http_client` and changed to drop the `headers` argument in favour of a
+  pre-configured `httpx2.AsyncClient`. The import and transport helper are now version
+  adaptive, so the Python chat server starts and initializes its AgentCore MCP client on
+  both older and newer `mcp` releases.
+- **Voice-mode work order creation failing with "Error processing response stream"**: the
+  Nova Sonic `queryMaintainX` handler now normalizes `create_work_order` parameters —
+  synthesizing the MaintainX-required `title` when the model omits it and mapping
+  `asset_id` to the API's camelCase `assetId`. The `queryMaintainX` tool description was
+  clarified so the model supplies the correct fields. Non-JSON tool results (such as
+  MaintainX validation errors) are now wrapped in JSON so a tool error no longer crashes
+  the bidirectional response stream.
+
+### Notes
+- Voice (Nova Sonic) and text chat remain independent backends and do not share
+  conversation context; a request in one mode is not aware of the other. Cross-mode shared
+  context is not implemented.
+- The Bedrock model is configured via the `MODEL` value in `runtime_config.json`. The
+  previously referenced `anthropic.claude-3-haiku-20240307-v1:0` has been retired; use a
+  currently available model or inference-profile ID for your account (for example
+  `us.anthropic.claude-haiku-4-5-20251001-v1:0`).
+
 ## [2.0.0] - 11-12-2025
 
 ### Added
